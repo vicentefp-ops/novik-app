@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isAuthenticated() &&
+        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+          (request.auth.token.email == "vicentefp@gmail.com" && request.auth.token.email_verified == true));
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['uid', 'email', 'role', 'displayName', 'photoURL', 'createdAt', 'language', 'country', 'specialty', 'licenseNumber', 'weightUnit', 'heightUnit', 'legalAcceptedAt', 'isProfileComplete']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['admin', 'user'] &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 500)) &&
+             (!('language' in data) || (data.language is string && data.language.size() < 10)) &&
+             (!('country' in data) || (data.country is string && data.country.size() < 100)) &&
+             (!('specialty' in data) || (data.specialty is string && data.specialty.size() < 100)) &&
+             (!('licenseNumber' in data) || (data.licenseNumber is string && data.licenseNumber.size() < 100)) &&
+             (!('weightUnit' in data) || (data.weightUnit in ['kg', 'lbs'])) &&
+             (!('heightUnit' in data) || (data.heightUnit in ['cm', 'ft'])) &&
+             (!('legalAcceptedAt' in data) || data.legalAcceptedAt is timestamp) &&
+             (!('isProfileComplete' in data) || data.isProfileComplete is bool) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidProtocol() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['title', 'issuingEntity', 'date', 'version', 'theme', 'keywords', 'priorityLevel', 'isActive', 'content', 'fileUrl', 'fileName', 'createdAt', 'updatedAt']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.isActive is bool &&
+             data.content is string && data.content.size() < 1000000 &&
+             (!('issuingEntity' in data) || (data.issuingEntity is string && data.issuingEntity.size() < 200)) &&
+             (!('date' in data) || (data.date is string && data.date.size() < 50)) &&
+             (!('version' in data) || (data.version is string && data.version.size() < 50)) &&
+             (!('theme' in data) || (data.theme is string && data.theme.size() < 200)) &&
+             (!('keywords' in data) || (data.keywords is list && data.keywords.size() < 50)) &&
+             (!('priorityLevel' in data) || (data.priorityLevel in ['alta', 'media', 'baja'])) &&
+             (!('fileUrl' in data) || (data.fileUrl is string && data.fileUrl.size() < 1000)) &&
+             (!('fileName' in data) || (data.fileName is string && data.fileName.size() < 200)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidLeaflet() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['commercialName', 'activeIngredient', 'pharmacologicalCategory', 'date', 'version', 'lab', 'drugType', 'keywords', 'isActive', 'content', 'fileUrl', 'fileName', 'createdAt', 'updatedAt']) &&
+             data.commercialName is string && data.commercialName.size() > 0 && data.commercialName.size() < 200 &&
+             data.activeIngredient is string && data.activeIngredient.size() > 0 && data.activeIngredient.size() < 200 &&
+             data.isActive is bool &&
+             data.content is string && data.content.size() < 1000000 &&
+             (!('pharmacologicalCategory' in data) || (data.pharmacologicalCategory is string && data.pharmacologicalCategory.size() < 200)) &&
+             (!('date' in data) || (data.date is string && data.date.size() < 50)) &&
+             (!('version' in data) || (data.version is string && data.version.size() < 50)) &&
+             (!('lab' in data) || (data.lab is string && data.lab.size() < 200)) &&
+             (!('drugType' in data) || (data.drugType is string && data.drugType.size() < 200)) &&
+             (!('keywords' in data) || (data.keywords is list && data.keywords.size() < 50)) &&
+             (!('fileUrl' in data) || (data.fileUrl is string && data.fileUrl.size() < 1000)) &&
+             (!('fileName' in data) || (data.fileName is string && data.fileName.size() < 200)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidCase() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields(['userId', 'patientData', 'recommendation', 'protocolsUsed', 'leafletsUsed', 'createdAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.patientData is string && data.patientData.size() < 100000 &&
+             data.recommendation is string && data.recommendation.size() < 100000 &&
+             (!('protocolsUsed' in data) || (data.protocolsUsed is list && data.protocolsUsed.size() < 100)) &&
+             (!('leafletsUsed' in data) || (data.leafletsUsed is list && data.leafletsUsed.size() < 100)) &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isValidUser() && ((isOwner(userId) && request.resource.data.role == 'user') || isAdmin());
+      allow update: if isAuthenticated() && isValidUser() && ((isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin());
+    }
+
+    match /logins/{loginId} {
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow read: if isAdmin();
+    }
+
+    match /protocols/{protocolId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidProtocol();
+      allow update: if isAdmin() && isValidProtocol();
+      allow delete: if isAdmin();
+    }
+
+    match /leaflets/{leafletId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidLeaflet();
+      allow update: if isAdmin() && isValidLeaflet();
+      allow delete: if isAdmin();
+    }
+
+    match /cases/{caseId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidCase() && request.resource.data.userId == request.auth.uid;
+      allow update: if false; // Cases are immutable audit logs
+      allow delete: if false;
+    }
+  }
+}

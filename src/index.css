@@ -1,0 +1,62 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --color-olive-50: #f4f5f0;
+  --color-olive-100: #e6e9db;
+  --color-olive-200: #ced5bc;
+  --color-olive-300: #aeb995;
+  --color-olive-400: #8f9b6e;
+  --color-olive-500: #717d50;
+  --color-olive-600: #57613c;
+  --color-olive-700: #434b30;
+  --color-olive-800: #363c27;
+  --color-olive-900: #2f3424;
+  --color-olive-950: #181c11;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  #pdf-content, #pdf-content * {
+    visibility: visible;
+  }
+  
+  #pdf-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+  }
+  
+  [data-html2canvas-ignore="true"] {
+    display: none !important;
+  }
+  
+  .page-break-inside-avoid {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+.prose sup, sup {
+  vertical-align: super;
+  font-size: 0.7em;
+  line-height: 0;
+  position: relative;
+  top: -0.2em;
+}
+
+.pdf-exporting {
+  width: 800px !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 40px !important;
+  background: white !important;
+}

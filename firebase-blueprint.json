@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the Novik application.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Protocol": {
+      "title": "Clinical Protocol",
+      "description": "A clinical protocol document.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "issuingEntity": { "type": "string" },
+        "date": { "type": "string" },
+        "version": { "type": "string" },
+        "theme": { "type": "string" },
+        "keywords": { "type": "array", "items": { "type": "string" } },
+        "priorityLevel": { "type": "string", "enum": ["alta", "media", "baja"] },
+        "isActive": { "type": "boolean" },
+        "content": { "type": "string", "description": "Extracted text content for AI context" },
+        "fileUrl": { "type": "string" },
+        "fileName": { "type": "string" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["title", "isActive", "content"]
+    },
+    "Leaflet": {
+      "title": "Pharmacological Leaflet",
+      "description": "A pharmacological leaflet document.",
+      "type": "object",
+      "properties": {
+        "commercialName": { "type": "string" },
+        "activeIngredient": { "type": "string" },
+        "pharmacologicalCategory": { "type": "string" },
+        "date": { "type": "string" },
+        "version": { "type": "string" },
+        "lab": { "type": "string" },
+        "drugType": { "type": "string" },
+        "keywords": { "type": "array", "items": { "type": "string" } },
+        "isActive": { "type": "boolean" },
+        "content": { "type": "string", "description": "Extracted text content for AI context" },
+        "fileUrl": { "type": "string" },
+        "fileName": { "type": "string" },
+        "createdAt": { "type": "timestamp" },
+        "updatedAt": { "type": "timestamp" }
+      },
+      "required": ["commercialName", "activeIngredient", "isActive", "content"]
+    },
+    "ClinicalCase": {
+      "title": "Clinical Case",
+      "description": "A record of a clinical case evaluated by Novik.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "patientData": { "type": "string", "description": "JSON stringified patient data" },
+        "recommendation": { "type": "string" },
+        "protocolsUsed": { "type": "array", "items": { "type": "string" } },
+        "leafletsUsed": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["userId", "patientData", "recommendation", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles and roles."
+    },
+    "protocols/{protocolId}": {
+      "schema": { "$ref": "#/entities/Protocol" },
+      "description": "Clinical protocols."
+    },
+    "leaflets/{leafletId}": {
+      "schema": { "$ref": "#/entities/Leaflet" },
+      "description": "Pharmacological leaflets."
+    },
+    "cases/{caseId}": {
+      "schema": { "$ref": "#/entities/ClinicalCase" },
+      "description": "Audit logs of clinical cases."
+    }
+  }
+}
