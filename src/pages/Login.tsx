@@ -17,6 +17,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [error, setError] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -144,9 +145,26 @@ export default function Login() {
                   />
                 </div>
                 {error && <p className="text-red-500 text-sm">{error}</p>}
+                
+                <div className="flex items-start gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    id="terms"
+                    checked={termsAccepted}
+                    onChange={(e) => setTermsAccepted(e.target.checked)}
+                    className="mt-1 h-4 w-4 text-olive-600 focus:ring-olive-500 border-slate-300 rounded"
+                  />
+                  <label htmlFor="terms">
+                    {language === 'en'
+                      ? 'I understand that Novik is a clinical decision support tool and I assume full responsibility for its use.'
+                      : 'Entiendo que Novik es una herramienta de soporte a la decisión clínica y asumo total responsabilidad por su uso.'}
+                  </label>
+                </div>
+
                 <button
                   type="submit"
-                  className="w-full px-6 py-3 bg-olive-600 text-white rounded-xl font-medium hover:bg-olive-700 transition-all shadow-sm"
+                  disabled={!termsAccepted}
+                  className="w-full px-6 py-3 bg-olive-600 text-white rounded-xl font-medium hover:bg-olive-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isRegistering ? 'Register' : 'Login'}
                 </button>
@@ -170,7 +188,8 @@ export default function Login() {
 
               <button
                 onClick={handleGoogleLogin}
-                className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-white border border-slate-300 rounded-xl text-slate-700 font-medium hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-olive-500 transition-all shadow-sm"
+                disabled={!termsAccepted}
+                className="w-full flex items-center justify-center gap-3 px-6 py-3 bg-white border border-slate-300 rounded-xl text-slate-700 font-medium hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-olive-500 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path
