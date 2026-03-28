@@ -41,15 +41,15 @@ async function searchPubMed(query: string) {
     
     if (data.error) {
       console.error('PubMed API error:', data.error);
-      return `Error searching PubMed: ${data.error}`;
+      return { content: `Error searching PubMed: ${data.error}` };
     }
     
-    if (!data.results || data.results.length === 0) return "No results found on PubMed.";
+    if (!data.results || data.results.length === 0) return { content: "No results found on PubMed." };
     
-    return JSON.stringify(data.results);
+    return { results: data.results };
   } catch (error) {
     console.error('Error searching PubMed:', error);
-    return "Error searching PubMed.";
+    return { content: "Error searching PubMed." };
   }
 }
 
@@ -216,8 +216,29 @@ Devuelve ÚNICAMENTE el texto clínico extraído y estructurado, listo para ser 
   }
 };
 
+async function verifyAndFixPubMedLink(content: string): Promise<string> {
+  const linkMatch = content.match(/\[(.*?)\]\((https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/\d+\/?)\)/);
+  if (linkMatch) {
+    const title = linkMatch[1];
+    const url = linkMatch[2];
+    try {
+      const searchResult = await searchPubMed(title);
+      if (searchResult.results && searchResult.results.length > 0) {
+        const realUrl = searchResult.results[0].url;
+        return content.replace(url, realUrl);
+      } else {
+        // If not found, remove the link to avoid broken links
+        return content.replace(`[${title}](${url})`, title);
+      }
+    } catch (e) {
+      console.error("Failed to verify PubMed link", e);
+    }
+  }
+  return content;
+}
+
 // Helper to re-index citations and format them as superscripts with commas
-function processCitationsAndReferences(text: string, language: string): string {
+async function processCitationsAndReferences(text: string, language: string): Promise<string> {
   // 0. Pre-process: Merge adjacent citations like [1][2], [1] [2], [1], [2] into [1, 2]
   // This ensures they are wrapped in a single <sup> tag later
   let processedText = text.replace(/\]\s*[,;]?\s*\[/g, ', ');
@@ -283,7 +304,8 @@ function processCitationsAndReferences(text: string, language: string): string {
   });
 
   const newRefs: string[] = [];
-  citationsInOrder.forEach((oldIdx, i) => {
+  for (let i = 0; i < citationsInOrder.length; i++) {
+    const oldIdx = citationsInOrder[i];
     let content = refContentMap.get(oldIdx);
     if (content) {
       // Fallback: If the AI failed to format as a markdown link, auto-link PMID, DOI, or URL
@@ -313,13 +335,17 @@ function processCitationsAndReferences(text: string, language: string): string {
         content = content.replace(/\]\((?:https?:\/\/)?(?:www\.)?pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)\/?\)/gi, '](https://pubmed.ncbi.nlm.nih.gov/$1/)');
       }
       
+      // Verify PubMed link
+      content = await verifyAndFixPubMedLink(content);
+      
       const newIdx = i + 1;
       newRefs.push(`${newIdx}. <span id="ref-${newIdx}" class="scroll-mt-24 inline-block"></span> ${content}`);
     }
-  });
+  }
 
   // Add any remaining references that were not cited in the text
-  refContentMap.forEach((content, oldIdx) => {
+  for (const [oldIdx, contentVal] of refContentMap.entries()) {
+    let content = contentVal;
     if (!citationsInOrder.includes(oldIdx)) {
       if (!content.includes('](') && !content.includes('<a ')) {
         const pmidMatch = content.match(/(?:PMID|PubMed)\s*:?\s*(\d+)/i);
@@ -342,10 +368,13 @@ function processCitationsAndReferences(text: string, language: string): string {
         content = content.replace(/\]\((?:https?:\/\/)?(?:www\.)?pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)\/?\)/gi, '](https://pubmed.ncbi.nlm.nih.gov/$1/)');
       }
       
+      // Verify PubMed link
+      content = await verifyAndFixPubMedLink(content);
+      
       const newIdx = newRefs.length + 1;
       newRefs.push(`${newIdx}. <span id="ref-${newIdx}" class="scroll-mt-24 inline-block"></span> ${content}`);
     }
-  });
+  }
 
   const header = language === 'en' ? 'References' : 'Referencias bibliográficas';
   return `${mainText.trim()}\n\n### ${header}\n${newRefs.join('\n')}`;
@@ -435,7 +464,7 @@ CRITICAL INSTRUCTIONS:
             functionResponses.push({
               functionResponse: {
                 name: fc.name,
-                response: { content: result }
+                response: typeof result === 'string' ? { content: result } : result
               }
             });
           } catch (toolError) {
@@ -506,7 +535,7 @@ CRITICAL INSTRUCTIONS:
     }
 
     // Process citations and references in the follow-up response
-    return processCitationsAndReferences(finalText, language);
+    return await processCitationsAndReferences(finalText, language);
   } catch (error) {
     console.error('Error answering follow-up:', error);
     throw error;
@@ -641,14 +670,21 @@ Propón EXACTAMENTE 3 opciones de analgésicos y EXACTAMENTE 3 opciones de antii
 Enumera los cuidados tras el procedimiento y signos de alarma. Sé extremadamente esquemático (usa viñetas cortas).
 
 ### ${language === 'en' ? 'References' : 'Referencias bibliográficas'}
-Genera una lista bibliográfica EXHAUSTIVA en formato Vancouver para TODAS las citas médicas que hayas incluido en el texto anterior. 
+${language === 'en' ? `Generate an EXHAUSTIVE bibliographic list in Vancouver format for ALL medical citations you have included in the text above. 
+You must include a real and verifiable reference for EACH clinical statement, drug choice, dosage adjustment, and contraindication mentioned. A complex case should have at least 10-15 references.
+Ensure that the references correspond exactly to the patient's medical context (e.g., do not cite pediatric sources if the patient is an adult). PRIORITIZE REFERENCES FROM THE LAST 5 YEARS (2021-2026).
+ALWAYS INCLUDE THE DIRECT LINK TO PUBMED in each bibliographic reference.
+CRITICAL AND MANDATORY: YOU MUST CALL THE searchPubMed TOOL FOR EVERY REFERENCE YOU INCLUDE. YOU CANNOT INVENT REFERENCES. EVERY SINGLE bibliographic reference MUST have the article title formatted as a Markdown link pointing EXACTLY to the url provided by the searchPubMed tool (e.g., https://pubmed.ncbi.nlm.nih.gov/123456/). DO NOT invent PMIDs. DO NOT leave ANY reference without its link.
+Exact format of the list:
+1. Author(s). [Article Title](https://pubmed.ncbi.nlm.nih.gov/123456/). Source. Year.
+2. Author(s). [Article Title](https://pubmed.ncbi.nlm.nih.gov/654321/). Source. Year.` : `Genera una lista bibliográfica EXHAUSTIVA en formato Vancouver para TODAS las citas médicas que hayas incluido en el texto anterior. 
 Debes incluir una referencia real y verificable para CADA afirmación clínica, elección de fármaco, ajuste de dosis y contraindicación mencionada. Un caso complejo debe tener al menos 10-15 referencias.
 Asegúrate de que las referencias correspondan exactamente al contexto médico del paciente (por ejemplo, no cites fuentes pediátricas si el paciente es adulto). PRIORIZA REFERENCIAS DE LOS ÚLTIMOS 5 AÑOS (2021-2026).
 INCLUYE SIEMPRE EL ENLACE DIRECTO A PUBMED en cada referencia bibliográfica.
-CRÍTICO Y OBLIGATORIO: TODAS Y CADA UNA de las referencias bibliográficas DEBEN tener el título del artículo formateado como un enlace Markdown que apunte EXACTAMENTE a la url proporcionada por la herramienta searchPubMed (ej: https://pubmed.ncbi.nlm.nih.gov/123456/). NO inventes PMIDs. NO dejes NINGUNA referencia sin su enlace.
+CRÍTICO Y OBLIGATORIO: DEBES LLAMAR A LA HERRAMIENTA searchPubMed PARA CADA REFERENCIA QUE INCLUYAS. NO PUEDES INVENTAR REFERENCIAS. TODAS Y CADA UNA de las referencias bibliográficas DEBEN tener el título del artículo formateado como un enlace Markdown que apunte EXACTAMENTE a la url proporcionada por la herramienta searchPubMed (ej: https://pubmed.ncbi.nlm.nih.gov/123456/). NO inventes PMIDs. NO dejes NINGUNA referencia sin su enlace.
 Formato exacto de la lista:
 1. Autor(es). [Título del artículo](https://pubmed.ncbi.nlm.nih.gov/123456/). Fuente. Año.
-2. Autor(es). [Título del artículo](https://pubmed.ncbi.nlm.nih.gov/654321/). Fuente. Año.
+2. Autor(es). [Título del artículo](https://pubmed.ncbi.nlm.nih.gov/654321/). Fuente. Año.`}
 `;
 
     const steps = language === 'en' 
@@ -731,7 +767,7 @@ Formato exacto de la lista:
               functionResponses.push({
                 functionResponse: {
                   name: fc.name,
-                  response: { content: result }
+                  response: typeof result === 'string' ? { content: result } : result
                 }
               });
             } catch (toolError) {
@@ -835,7 +871,7 @@ Formato exacto de la lista:
     }
 
     // Process citations and references (re-indexing and superscript formatting)
-    finalText = processCitationsAndReferences(finalText, language);
+    finalText = await processCitationsAndReferences(finalText, language);
 
     if (onProgress) onProgress(language === 'en' ? 'Finalizing clinical report (this may take a minute)...' : 'Finalizando informe clínico (esto puede tomar un minuto)...');
     return finalText;
