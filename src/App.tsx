@@ -6,6 +6,7 @@ import ClinicalEngine from './pages/ClinicalEngine';
 import AdminProtocols from './pages/AdminProtocols';
 import AdminLeaflets from './pages/AdminLeaflets';
 import AdminUsers from './pages/AdminUsers';
+import AdminBanners from './pages/AdminBanners';
 import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 import Settings from './pages/Settings';
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="admin/protocols" element={<ProtectedRoute requireAdmin><AdminProtocols /></ProtectedRoute>} />
               <Route path="admin/leaflets" element={<ProtectedRoute requireAdmin><AdminLeaflets /></ProtectedRoute>} />
               <Route path="admin/users" element={<ProtectedRoute requireAdmin><AdminUsers /></ProtectedRoute>} />
+              <Route path="admin/banners" element={<ProtectedRoute requireAdmin><AdminBanners /></ProtectedRoute>} />
             </Route>
           </Routes>
         </Router>

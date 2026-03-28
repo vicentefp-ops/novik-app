@@ -45,6 +45,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // Check if it's the admin email
             const role: Role = firebaseUser.email === 'vicentefp@gmail.com' ? 'admin' : 'user';
             
+            let country = 'Unknown';
+            try {
+              const response = await fetch('https://ipapi.co/json/');
+              const data = await response.json();
+              country = data.country_name || 'Unknown';
+            } catch (e) {
+              console.error('Error fetching country:', e);
+            }
+
             userData = {
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
@@ -52,6 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               displayName: firebaseUser.displayName || '',
               photoURL: firebaseUser.photoURL || '',
               createdAt: serverTimestamp(),
+              country,
             };
             
             await setDoc(userDocRef, userData);

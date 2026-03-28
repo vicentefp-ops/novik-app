@@ -3,6 +3,7 @@ import { collection, getDocs, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useLanguage } from '../context/LanguageContext';
 import { Users, Activity, Globe, FileText, Loader2 } from 'lucide-react';
+import { countryMapping } from '../constants';
 import {
   LineChart,
   Line,
@@ -23,6 +24,7 @@ import { es, enUS } from 'date-fns/locale';
 
 interface UserData {
   id: string;
+  email: string;
   createdAt: any;
   country?: string;
   role: string;
@@ -30,6 +32,7 @@ interface UserData {
 
 interface CaseData {
   id: string;
+  userId: string;
   createdAt: any;
 }
 
@@ -47,12 +50,19 @@ export default function AdminUsers() {
     totalCases: 0,
   });
 
+  const [users, setUsers] = useState<UserData[]>([]);
+  const [cases, setCases] = useState<CaseData[]>([]);
   const [activityData, setActivityData] = useState<any[]>([]);
   const [countryData, setCountryData] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
   }, [startDate, endDate]);
+
+  const normalizeCountry = (country: string) => {
+    const normalized = country.trim().toLowerCase();
+    return countryMapping[normalized] || normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -65,11 +75,13 @@ export default function AdminUsers() {
       usersSnapshot.forEach((doc) => {
         users.push({ id: doc.id, ...doc.data() } as UserData);
       });
+      setUsers(users);
 
       const cases: CaseData[] = [];
       casesSnapshot.forEach((doc) => {
         cases.push({ id: doc.id, ...doc.data() } as CaseData);
       });
+      setCases(cases);
 
       const logins: any[] = [];
       loginsSnapshot.forEach((doc) => {
@@ -88,11 +100,6 @@ export default function AdminUsers() {
 
       // Country Data (filtered by period)
       const countryCounts: Record<string, number> = {};
-      const normalizeCountry = (country: string) => {
-        const normalized = country.trim();
-        if (normalized.toLowerCase() === 'spain' || normalized.toLowerCase() === 'españa') return 'España';
-        return normalized;
-      };
 
       users.filter(u => u.createdAt?.toDate && isAfter(u.createdAt.toDate(), periodStart) && !isAfter(u.createdAt.toDate(), periodEnd)).forEach(u => {
         if (u.country) {
@@ -155,6 +162,20 @@ export default function AdminUsers() {
     }
   };
 
+  const getConsultationsByCountry = () => {
+    const countryCounts: Record<string, number> = {};
+    cases.forEach(c => {
+      const user = users.find(u => u.id === c.userId);
+      if (user && user.country) {
+        const country = normalizeCountry(user.country);
+        countryCounts[country] = (countryCounts[country] || 0) + 1;
+      }
+    });
+    return Object.entries(countryCounts)
+      .map(([country, count]) => ({ country, count }))
+      .sort((a, b) => b.count - a.count);
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -194,15 +215,31 @@ export default function AdminUsers() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex items-center gap-4">
+          <button 
+            onClick={() => {
+              const csvContent = "data:text/csv;charset=utf-8," + 
+                ["Email,País,Fecha de Registro"].concat(
+                  users.map(u => `${u.email},${u.country || 'Unknown'},${u.createdAt?.toDate ? format(u.createdAt.toDate(), 'yyyy-MM-dd') : ''}`)
+                ).join("\n");
+              const encodedUri = encodeURI(csvContent);
+              const link = document.createElement("a");
+              link.setAttribute("href", encodedUri);
+              link.setAttribute("download", "usuarios_novik.csv");
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }}
+            className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex items-center gap-4 hover:bg-slate-50 transition-colors w-full text-left"
+          >
             <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center">
               <Users className="w-6 h-6 text-blue-600" />
             </div>
             <div>
               <p className="text-sm font-medium text-slate-500">{t('totalUsers')}</p>
               <p className="text-2xl font-bold text-slate-900">{stats.totalUsers}</p>
+              <p className="text-xs text-blue-600 mt-1">Descargar CSV</p>
             </div>
-          </div>
+          </button>
           
           <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex items-center gap-4">
             <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center">
@@ -286,33 +323,51 @@ export default function AdminUsers() {
           </div>
         </div>
 
-        {/* Country Table */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {/* Users by Country Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-8">
           <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-            <h2 className="text-lg font-medium text-slate-900">{t('usersByCountry')}</h2>
+            <h2 className="text-lg font-medium text-slate-900">Usuarios por País</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-3">{t('country')}</th>
-                  <th className="px-6 py-3 text-right">{t('usersCount')}</th>
+                  <th className="px-6 py-3">País</th>
+                  <th className="px-6 py-3 text-right">Número de Usuarios</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {countryData.map((country, idx) => (
+                {countryData.map((item, idx) => (
                   <tr key={idx} className="hover:bg-slate-50">
-                    <td className="px-6 py-4 font-medium text-slate-900">{country.name}</td>
-                    <td className="px-6 py-4 text-right">{country.value}</td>
+                    <td className="px-6 py-4 font-medium text-slate-900">{item.name}</td>
+                    <td className="px-6 py-4 text-right">{item.value}</td>
                   </tr>
                 ))}
-                {countryData.length === 0 && (
-                  <tr>
-                    <td colSpan={2} className="px-6 py-8 text-center text-slate-400">
-                      No data available
-                    </td>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Consultations by Country Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-8">
+          <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+            <h2 className="text-lg font-medium text-slate-900">Consultas por País</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                <tr>
+                  <th className="px-6 py-3">País</th>
+                  <th className="px-6 py-3 text-right">Número de Consultas</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {getConsultationsByCountry().map((item, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50">
+                    <td className="px-6 py-4 font-medium text-slate-900">{item.country}</td>
+                    <td className="px-6 py-4 text-right">{item.count}</td>
                   </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </div>

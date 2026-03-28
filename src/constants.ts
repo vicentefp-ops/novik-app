@@ -1,0 +1,23 @@
+export const countryMapping: Record<string, string> = {
+  'spain': 'España',
+  'españa': 'España',
+  'germany': 'Alemania',
+  'alemania': 'Alemania',
+  'france': 'Francia',
+  'francia': 'Francia',
+  'italy': 'Italia',
+  'italia': 'Italia',
+  'united kingdom': 'Reino Unido',
+  'reino unido': 'Reino Unido',
+  'united states': 'Estados Unidos',
+  'estados unidos': 'Estados Unidos',
+  'portugal': 'Portugal',
+  'mexico': 'México',
+  'méxico': 'México',
+  'argentina': 'Argentina',
+  'colombia': 'Colombia',
+  'chile': 'Chile',
+  'peru': 'Perú',
+  'perú': 'Perú',
+  // Puedes añadir más países aquí
+};

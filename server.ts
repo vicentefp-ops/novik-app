@@ -20,23 +20,21 @@ async function startServer() {
 
     try {
       const apiKey = process.env.PUBMED_API_KEY;
-      if (!apiKey) {
-        return res.status(500).json({ error: "PubMed API key not configured" });
-      }
+      const apiKeyParam = apiKey ? `&api_key=${apiKey}` : '';
 
       // PubMed E-utilities API - Restrict to last 5 years (2021-2026)
       const currentYear = new Date().getFullYear();
       const startYear = currentYear - 5;
-      const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&mindate=${startYear}&maxdate=${currentYear}&datetype=pdat&retmax=5&retmode=json&api_key=${apiKey}`;
+      const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&mindate=${startYear}&maxdate=${currentYear}&datetype=pdat&retmax=5&retmode=json${apiKeyParam}`;
       const searchResponse = await fetch(searchUrl);
       const searchData = await searchResponse.json();
-      const idList = searchData.esearchresult.idlist;
+      const idList = searchData.esearchresult?.idlist || [];
 
       if (idList.length === 0) {
         return res.json({ results: [] });
       }
 
-      const fetchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${idList.join(',')}&retmode=json&api_key=${apiKey}`;
+      const fetchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${idList.join(',')}&retmode=json${apiKeyParam}`;
       const fetchResponse = await fetch(fetchUrl);
       const fetchData = await fetchResponse.json();
 

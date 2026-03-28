@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { Stethoscope, FileText, Pill, LogOut, ShieldAlert, Settings as SettingsIcon, Users, Menu, X } from 'lucide-react';
 import clsx from 'clsx';
+import CrossPromotionBanner from './CrossPromotionBanner';
 
 // import logo from '../assets/logo_new.png'; // Removed in favor of public/logo.png
 
@@ -85,6 +86,8 @@ export default function Layout() {
             {t('settings')}
           </NavLink>
 
+          <CrossPromotionBanner />
+
           {isAdmin && (
             <>
               <div className="pt-6 pb-2 px-3">
@@ -107,6 +110,21 @@ export default function Layout() {
               >
                 <Users className="w-5 h-5" />
                 {t('adminUsers')}
+              </NavLink>
+              <NavLink
+                to="/admin/banners"
+                onClick={closeMobileMenu}
+                className={({ isActive }) =>
+                  clsx(
+                    'flex items-center gap-3 px-3 py-2 rounded-lg transition-colors font-medium text-sm',
+                    isActive
+                      ? 'bg-slate-800 text-white'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  )
+                }
+              >
+                <Menu className="w-5 h-5" />
+                Gestor de Banners
               </NavLink>
               <NavLink
                 to="/admin/protocols"

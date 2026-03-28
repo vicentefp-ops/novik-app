@@ -288,7 +288,7 @@ function processCitationsAndReferences(text: string, language: string): string {
     if (content) {
       // Fallback: If the AI failed to format as a markdown link, auto-link PMID, DOI, or URL
       if (!content.includes('](') && !content.includes('<a ')) {
-        const pmidMatch = content.match(/(?:PMID|PubMed):\s*(\d+)/i);
+        const pmidMatch = content.match(/(?:PMID|PubMed)\s*:?\s*(\d+)/i);
         if (pmidMatch) {
           content = content.replace(pmidMatch[0], `PMID: [${pmidMatch[1]}](https://pubmed.ncbi.nlm.nih.gov/${pmidMatch[1]}/)`);
         } else {
@@ -305,12 +305,45 @@ function processCitationsAndReferences(text: string, language: string): string {
       } else {
         // Fix broken markdown links like [Title](DOI: 10...) or [Title](10...)
         content = content.replace(/\]\((?:DOI:\s*)?(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)\)/gi, '](https://doi.org/$1)');
-        // Fix broken markdown links like [Title](PMID: 12345) or [Title](PubMed: 12345)
-        content = content.replace(/\]\((?:PMID|PubMed):\s*(\d+)\)/gi, '](https://pubmed.ncbi.nlm.nih.gov/$1/)');
+        
+        // Fix broken markdown links like [Title](PMID: 12345), [Title](PubMed 12345), [Title](123456)
+        content = content.replace(/\]\((?:(?:PMID|PubMed)\s*:?\s*)?(\d{6,9})\)/gi, '](https://pubmed.ncbi.nlm.nih.gov/$1/)');
+        
+        // Fix broken markdown links like [Title](www.pubmed.ncbi.nlm.nih.gov/123456)
+        content = content.replace(/\]\((?:https?:\/\/)?(?:www\.)?pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)\/?\)/gi, '](https://pubmed.ncbi.nlm.nih.gov/$1/)');
       }
       
       const newIdx = i + 1;
-      newRefs.push(`${newIdx}. <span id="ref-${newIdx}" class="scroll-mt-24 inline-block"></span>${content}`);
+      newRefs.push(`${newIdx}. <span id="ref-${newIdx}" class="scroll-mt-24 inline-block"></span> ${content}`);
+    }
+  });
+
+  // Add any remaining references that were not cited in the text
+  refContentMap.forEach((content, oldIdx) => {
+    if (!citationsInOrder.includes(oldIdx)) {
+      if (!content.includes('](') && !content.includes('<a ')) {
+        const pmidMatch = content.match(/(?:PMID|PubMed)\s*:?\s*(\d+)/i);
+        if (pmidMatch) {
+          content = content.replace(pmidMatch[0], `PMID: [${pmidMatch[1]}](https://pubmed.ncbi.nlm.nih.gov/${pmidMatch[1]}/)`);
+        } else {
+          const doiMatch = content.match(/DOI:\s*(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)/i);
+          if (doiMatch) {
+            content = content.replace(doiMatch[0], `DOI: [${doiMatch[1]}](https://doi.org/${doiMatch[1]})`);
+          } else {
+            const urlMatch = content.match(/(https?:\/\/[^\s]+)/i);
+            if (urlMatch) {
+              content = content.replace(urlMatch[0], `[${urlMatch[0]}](${urlMatch[0]})`);
+            }
+          }
+        }
+      } else {
+        content = content.replace(/\]\((?:DOI:\s*)?(10\.\d{4,9}\/[-._;()/:a-zA-Z0-9]+)\)/gi, '](https://doi.org/$1)');
+        content = content.replace(/\]\((?:(?:PMID|PubMed)\s*:?\s*)?(\d{6,9})\)/gi, '](https://pubmed.ncbi.nlm.nih.gov/$1/)');
+        content = content.replace(/\]\((?:https?:\/\/)?(?:www\.)?pubmed\.ncbi\.nlm\.nih\.gov\/(\d+)\/?\)/gi, '](https://pubmed.ncbi.nlm.nih.gov/$1/)');
+      }
+      
+      const newIdx = newRefs.length + 1;
+      newRefs.push(`${newIdx}. <span id="ref-${newIdx}" class="scroll-mt-24 inline-block"></span> ${content}`);
     }
   });
 
