@@ -232,7 +232,8 @@ async function verifyAndFixPubMedLink(content: string): Promise<string> {
   }
 
   for (const m of matches) {
-    const linkText = m.text;
+    // Strip markdown characters from linkText for cleaner searching
+    const linkText = m.text.replace(/[*_~`]/g, '').trim();
     const originalUrl = m.url;
     
     // 1. Try to extract PMID and verify it directly
@@ -266,7 +267,7 @@ async function verifyAndFixPubMedLink(content: string): Promise<string> {
 
       if (searchData.results && searchData.results.length > 0) {
         // Found it! Use the real URL.
-        newContent = newContent.replace(originalUrl, searchData.results[0].url);
+        newContent = newContent.split(m.fullMatch).join(`[${m.text}](${searchData.results[0].url})`);
         continue;
       }
 
@@ -282,19 +283,19 @@ async function verifyAndFixPubMedLink(content: string): Promise<string> {
         });
         const searchData2 = await response2.json();
         if (searchData2.results && searchData2.results.length > 0) {
-          newContent = newContent.replace(originalUrl, searchData2.results[0].url);
+          newContent = newContent.split(m.fullMatch).join(`[${m.text}](${searchData2.results[0].url})`);
           continue;
         }
       }
 
-      // 4. If STILL not found, create a fallback search URL using the longest part
-      const searchUrl = `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(longestPart || linkText)}`;
-      newContent = newContent.replace(originalUrl, searchUrl);
+      // 4. If STILL not found, create a fallback search URL using the full link text
+      const searchUrl = `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(linkText)}`;
+      newContent = newContent.split(m.fullMatch).join(`[${m.text}](${searchUrl})`);
 
     } catch (e) {
       console.error("Failed to verify PubMed link", e);
       const searchUrl = `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(linkText)}`;
-      newContent = newContent.replace(originalUrl, searchUrl);
+      newContent = newContent.split(m.fullMatch).join(`[${m.text}](${searchUrl})`);
     }
   }
   
@@ -357,14 +358,41 @@ async function processCitationsAndReferences(text: string, language: string): Pr
   const refLines = refsText.split('\n');
   const refContentMap = new Map<number, string>();
   let currentRefIdx = -1;
+  let unnumberedIdx = 1;
+  
   refLines.forEach(line => {
     // Match formats like "1.", "[1]", "1)", "- 1.", "**1.**", etc.
-    const m = line.match(/^\s*(?:[-*]\s*)?(?:\*\*)?\[?(\d+)\]?[\.\)\-]?(?:\*\*)?\s+(.*)/);
-    if (m) {
-      currentRefIdx = parseInt(m[1]);
-      refContentMap.set(currentRefIdx, m[2]);
-    } else if (currentRefIdx !== -1 && line.trim() !== '') {
-      refContentMap.set(currentRefIdx, refContentMap.get(currentRefIdx) + ' ' + line.trim());
+    const mNumbered = line.match(/^\s*(?:[-*]\s*)?(?:\*\*)?\[?(\d+)\]?[\.\)\-]?(?:\*\*)?\s+(.*)/);
+    // Match unnumbered bullet points: "- Author..." or "* Author..."
+    const mUnnumbered = line.match(/^\s*[-*]\s+(.*)/);
+    
+    if (mNumbered) {
+      currentRefIdx = parseInt(mNumbered[1]);
+      refContentMap.set(currentRefIdx, mNumbered[2]);
+    } else if (mUnnumbered) {
+      // Find the next available index
+      while (refContentMap.has(unnumberedIdx)) {
+        unnumberedIdx++;
+      }
+      currentRefIdx = unnumberedIdx;
+      refContentMap.set(currentRefIdx, mUnnumbered[1]);
+      unnumberedIdx++;
+    } else if (line.trim() === '') {
+      currentRefIdx = -1; // Reset on empty line to catch unnumbered/unbulleted references separated by newlines
+    } else {
+      // It's not empty.
+      if (currentRefIdx === -1) {
+        // We don't have a current reference, so this must be a new one
+        while (refContentMap.has(unnumberedIdx)) {
+          unnumberedIdx++;
+        }
+        currentRefIdx = unnumberedIdx;
+        refContentMap.set(currentRefIdx, line.trim());
+        unnumberedIdx++;
+      } else {
+        // Continuation of the previous reference
+        refContentMap.set(currentRefIdx, refContentMap.get(currentRefIdx) + ' ' + line.trim());
+      }
     }
   });
 
@@ -778,19 +806,19 @@ Enumera los cuidados tras el procedimiento y signos de alarma. Sé extremadament
 
 ### ${language === 'en' ? 'References' : 'Referencias bibliográficas'}
 ${language === 'en' ? `Generate a bibliographic list in Vancouver format for the most important medical citations you have included in the text above. 
-You must include a real and verifiable reference for the key clinical statements, drug choices, and contraindications mentioned. A complex case should have 3-5 HIGHLY RELEVANT references.
+You must include a real and verifiable reference for the key clinical statements, drug choices, and contraindications mentioned. A complex case MUST have at least 5 HIGHLY RELEVANT references.
 Ensure that the references correspond exactly to the patient's medical context (e.g., do not cite pediatric sources if the patient is an adult). PRIORITIZE REFERENCES FROM THE LAST 10 YEARS (2016-2026).
 ALWAYS INCLUDE THE DIRECT LINK TO PUBMED in each bibliographic reference.
-CRITICAL AND MANDATORY: YOU MUST CALL THE searchPubMed TOOL TO FIND THESE REFERENCES. DO NOT INVENT REFERENCES. IT IS BETTER TO HAVE 3 REAL, VERIFIED REFERENCES THAN 10 INVENTED ONES. IF YOU DID NOT FIND IT IN PUBMED USING THE TOOL, DO NOT CITE IT.
+CRITICAL AND MANDATORY: YOU MUST CALL THE searchPubMed TOOL TO FIND THESE REFERENCES. DO NOT INVENT REFERENCES. IT IS BETTER TO HAVE 5 REAL, VERIFIED REFERENCES THAN 10 INVENTED ONES. IF YOU DID NOT FIND IT IN PUBMED USING THE TOOL, DO NOT CITE IT.
 EVERY SINGLE bibliographic reference MUST have the article title formatted as a Markdown link pointing EXACTLY to the url provided by the searchPubMed tool (e.g., https://pubmed.ncbi.nlm.nih.gov/123456/). DO NOT invent PMIDs.
 CRITICAL: DO NOT TRANSLATE THE ARTICLE TITLE. KEEP IT IN ITS ORIGINAL LANGUAGE (ENGLISH).
 Exact format of the list:
 1. Author(s). [Article Title in Original Language](https://pubmed.ncbi.nlm.nih.gov/123456/). Source. Year.
 2. Author(s). [Article Title in Original Language](https://pubmed.ncbi.nlm.nih.gov/654321/). Source. Year.` : `Genera una lista bibliográfica en formato Vancouver para las citas médicas más importantes que hayas incluido en el texto anterior. 
-Debes incluir una referencia real y verificable para las afirmaciones clínicas clave, elecciones de fármacos y contraindicaciones mencionadas. Un caso complejo debe tener 3-5 referencias ALTAMENTE RELEVANTES.
+Debes incluir una referencia real y verificable para las afirmaciones clínicas clave, elecciones de fármacos y contraindicaciones mencionadas. Un caso complejo DEBE tener al menos 5 referencias ALTAMENTE RELEVANTES.
 Asegúrate de que las referencias correspondan exactamente al contexto médico del paciente (por ejemplo, no cites fuentes pediátricas si el paciente es adulto). PRIORIZA REFERENCIAS DE LOS ÚLTIMOS 10 AÑOS (2016-2026).
 INCLUYE SIEMPRE EL ENLACE DIRECTO A PUBMED en cada referencia bibliográfica.
-CRÍTICO Y OBLIGATORIO: DEBES LLAMAR A LA HERRAMIENTA searchPubMed PARA ENCONTRAR ESTAS REFERENCIAS. NO INVENTES REFERENCIAS. ES MEJOR TENER 3 REFERENCIAS REALES Y VERIFICADAS QUE 10 INVENTADAS. SI NO LO ENCONTRASTE EN PUBMED USANDO LA HERRAMIENTA, NO LO CITES.
+CRÍTICO Y OBLIGATORIO: DEBES LLAMAR A LA HERRAMIENTA searchPubMed PARA ENCONTRAR ESTAS REFERENCIAS. NO INVENTES REFERENCIAS. ES MEJOR TENER 5 REFERENCIAS REALES Y VERIFICADAS QUE 10 INVENTADAS. SI NO LO ENCONTRASTE EN PUBMED USANDO LA HERRAMIENTA, NO LO CITES.
 TODAS Y CADA UNA de las referencias bibliográficas DEBEN tener el título del artículo formateado como un enlace Markdown que apunte EXACTAMENTE a la url proporcionada por la herramienta searchPubMed (ej: https://pubmed.ncbi.nlm.nih.gov/123456/). NO inventes PMIDs.
 CRÍTICO: NO TRADUZCAS EL TÍTULO DEL ARTÍCULO. MANTENLO EN SU IDIOMA ORIGINAL (INGLÉS).
 Formato exacto de la lista:
