@@ -249,6 +249,8 @@ export default function ClinicalEngine() {
                 margin: 0 !important;
                 overflow: visible !important;
                 height: auto !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
               }
               #pdf-content {
                 box-shadow: none !important;
@@ -257,12 +259,21 @@ export default function ClinicalEngine() {
                 width: 100% !important;
                 height: auto !important;
                 overflow: visible !important;
+                position: relative !important;
               }
               [data-html2canvas-ignore="true"] { display: none !important; }
               
               /* Ensure content can break across pages */
               .page-break-inside-avoid {
+                page-break-inside: avoid;
                 break-inside: avoid;
+              }
+              
+              /* Reset any absolute positioning that might clip content */
+              * {
+                float: none !important;
+                position: static !important;
+                overflow: visible !important;
               }
             </style>
           </head>
