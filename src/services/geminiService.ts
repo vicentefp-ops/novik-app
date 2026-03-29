@@ -235,8 +235,27 @@ async function verifyAndFixPubMedLink(content: string): Promise<string> {
     const linkText = m.text;
     const originalUrl = m.url;
     
+    // 1. Try to extract PMID and verify it directly
+    const pmidMatch = originalUrl.match(/(?:pubmed\.ncbi\.nlm\.nih\.gov\/|pubmed\/)(\d+)/i);
+    if (pmidMatch) {
+      const pmid = pmidMatch[1];
+      try {
+        const verifyResponse = await fetch(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json`);
+        if (verifyResponse.ok) {
+          const verifyData = await verifyResponse.json();
+          if (verifyData.result && verifyData.result[pmid] && !verifyData.result[pmid].error) {
+            // The PMID is valid! Keep the original URL.
+            continue;
+          }
+        }
+      } catch (e) {
+        console.error("Error verifying PMID directly:", e);
+        continue; // Keep original on network error
+      }
+    }
+    
+    // 2. If we reach here, PMID is invalid or missing. Try searching by text.
     try {
-      // 1. Search PubMed for the exact text (usually the title)
       // Pass verifyOnly: true to bypass date restrictions
       const response = await fetch('/api/pubmed', {
         method: 'POST',
@@ -251,7 +270,7 @@ async function verifyAndFixPubMedLink(content: string): Promise<string> {
         continue;
       }
 
-      // 2. If not found, the linkText might contain authors/years. Extract the longest sentence.
+      // 3. If not found, the linkText might contain authors/years. Extract the longest sentence.
       const parts = linkText.split(/\.\s+/);
       const longestPart = parts.reduce((a, b) => a.length > b.length ? a : b, "");
       
@@ -268,7 +287,7 @@ async function verifyAndFixPubMedLink(content: string): Promise<string> {
         }
       }
 
-      // 3. If STILL not found, create a fallback search URL using the longest part
+      // 4. If STILL not found, create a fallback search URL using the longest part
       const searchUrl = `https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(longestPart || linkText)}`;
       newContent = newContent.replace(originalUrl, searchUrl);
 
@@ -740,16 +759,18 @@ You must include a real and verifiable reference for EACH clinical statement, dr
 Ensure that the references correspond exactly to the patient's medical context (e.g., do not cite pediatric sources if the patient is an adult). PRIORITIZE REFERENCES FROM THE LAST 10 YEARS (2016-2026).
 ALWAYS INCLUDE THE DIRECT LINK TO PUBMED in each bibliographic reference.
 CRITICAL AND MANDATORY: YOU MUST CALL THE searchPubMed TOOL FOR EVERY REFERENCE YOU INCLUDE. YOU CANNOT INVENT REFERENCES. EVERY SINGLE bibliographic reference MUST have the article title formatted as a Markdown link pointing EXACTLY to the url provided by the searchPubMed tool (e.g., https://pubmed.ncbi.nlm.nih.gov/123456/). DO NOT invent PMIDs. DO NOT leave ANY reference without its link.
+CRITICAL: DO NOT TRANSLATE THE ARTICLE TITLE. KEEP IT IN ITS ORIGINAL LANGUAGE (ENGLISH).
 Exact format of the list:
-1. Author(s). [Article Title](https://pubmed.ncbi.nlm.nih.gov/123456/). Source. Year.
-2. Author(s). [Article Title](https://pubmed.ncbi.nlm.nih.gov/654321/). Source. Year.` : `Genera una lista bibliográfica EXHAUSTIVA en formato Vancouver para TODAS las citas médicas que hayas incluido en el texto anterior. 
+1. Author(s). [Article Title in Original Language](https://pubmed.ncbi.nlm.nih.gov/123456/). Source. Year.
+2. Author(s). [Article Title in Original Language](https://pubmed.ncbi.nlm.nih.gov/654321/). Source. Year.` : `Genera una lista bibliográfica EXHAUSTIVA en formato Vancouver para TODAS las citas médicas que hayas incluido en el texto anterior. 
 Debes incluir una referencia real y verificable para CADA afirmación clínica, elección de fármaco, ajuste de dosis y contraindicación mencionada. Un caso complejo debe tener al menos 10-15 referencias.
 Asegúrate de que las referencias correspondan exactamente al contexto médico del paciente (por ejemplo, no cites fuentes pediátricas si el paciente es adulto). PRIORIZA REFERENCIAS DE LOS ÚLTIMOS 10 AÑOS (2016-2026).
 INCLUYE SIEMPRE EL ENLACE DIRECTO A PUBMED en cada referencia bibliográfica.
 CRÍTICO Y OBLIGATORIO: DEBES LLAMAR A LA HERRAMIENTA searchPubMed PARA CADA REFERENCIA QUE INCLUYAS. NO PUEDES INVENTAR REFERENCIAS. TODAS Y CADA UNA de las referencias bibliográficas DEBEN tener el título del artículo formateado como un enlace Markdown que apunte EXACTAMENTE a la url proporcionada por la herramienta searchPubMed (ej: https://pubmed.ncbi.nlm.nih.gov/123456/). NO inventes PMIDs. NO dejes NINGUNA referencia sin su enlace.
+CRÍTICO: NO TRADUZCAS EL TÍTULO DEL ARTÍCULO. MANTENLO EN SU IDIOMA ORIGINAL (INGLÉS).
 Formato exacto de la lista:
-1. Autor(es). [Título del artículo](https://pubmed.ncbi.nlm.nih.gov/123456/). Fuente. Año.
-2. Autor(es). [Título del artículo](https://pubmed.ncbi.nlm.nih.gov/654321/). Fuente. Año.`}
+1. Autor(es). [Título del artículo en su idioma original](https://pubmed.ncbi.nlm.nih.gov/123456/). Fuente. Año.
+2. Autor(es). [Título del artículo en su idioma original](https://pubmed.ncbi.nlm.nih.gov/654321/). Fuente. Año.`}
 `;
 
     const steps = language === 'en' 
