@@ -513,7 +513,8 @@ export const askFollowUpQuestion = async (
   chatHistory: { role: string; content: string }[],
   newQuestion: string,
   language: string = 'es',
-  onProgress?: (status: string) => void
+  onProgress?: (status: string) => void,
+  signal?: AbortSignal
 ) => {
   // The last message in chatHistory is the newQuestion, so we take everything before it
   const previousHistory = chatHistory.slice(0, -1);
@@ -565,6 +566,7 @@ CRITICAL INSTRUCTIONS:
       if (onProgress) onProgress(language === 'en' ? 'Thinking...' : 'Pensando...');
       
       console.log(`Follow-up iteration ${iterations + 1}...`);
+      if (signal?.aborted) throw new Error('AbortError');
       response = await callGeminiWithRetry({
         model: 'gemini-3.1-pro-preview',
         contents,
@@ -630,6 +632,7 @@ CRITICAL INSTRUCTIONS:
       console.log('Finalizing follow-up with a text-only call...');
       if (onProgress) onProgress(language === 'en' ? 'Finalizing answer...' : 'Finalizando respuesta...');
       
+      if (signal?.aborted) throw new Error('AbortError');
       const finalResponse = await callGeminiWithRetry({
         model: 'gemini-3.1-pro-preview',
         contents,
@@ -650,7 +653,8 @@ CRITICAL INSTRUCTIONS:
         console.log('Desperate fallback for follow-up...');
         const fallbackResponse = await callGeminiWithRetry({
           model: 'gemini-3.1-pro-preview',
-          contents: [{ role: 'user', parts: [{ text: `Responde a esta pregunta del odontólogo basándote en la recomendación previa: ${newQuestion}` }] }]
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: {} // No tools to force a direct text response
         });
         finalText = fallbackResponse.text || fallbackResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
       } catch (fallbackError) {
@@ -680,7 +684,8 @@ export const evaluateClinicalCase = async (
   activeProtocols: any[],
   activeLeaflets: any[],
   language: string = 'es',
-  onProgress?: (status: string) => void
+  onProgress?: (status: string) => void,
+  signal?: AbortSignal
 ) => {
   const protocolsContext = activeProtocols.map(p => `${p.content}`).join('\n\n');
   const leafletsContext = activeLeaflets.map(l => `PROSPECTO: ${l.commercialName} (${l.activeIngredient})\n${l.content}`).join('\n\n');
@@ -874,6 +879,10 @@ Formato exacto de la lista:
       const maxIterations = 5;
 
       while (iterations < maxIterations) {
+        if (signal?.aborted) {
+          clearInterval(progressInterval);
+          throw new Error('AbortError');
+        }
         console.log(`Iteration ${iterations + 1} of tool loop...`);
         try {
           response = await callGeminiWithRetry({
@@ -977,6 +986,7 @@ Formato exacto de la lista:
       console.log('Finalizing report with a text-only call...');
       if (onProgress) onProgress(language === 'en' ? 'Finalizing report...' : 'Finalizando informe...');
       
+      if (signal?.aborted) throw new Error('AbortError');
       const finalResponse = await callGeminiWithRetry({
         model: 'gemini-3.1-pro-preview',
         contents,
@@ -997,7 +1007,8 @@ Formato exacto de la lista:
         console.log('Desperate fallback for main analysis...');
         const fallbackResponse = await callGeminiWithRetry({
           model: 'gemini-3.1-pro-preview',
-          contents: [{ role: 'user', parts: [{ text: language === 'en' ? `Generate the requested clinical report based on the data provided above.` : `Genera el informe clínico solicitado basándote en los datos proporcionados anteriormente.` }] }]
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
         });
         finalText = fallbackResponse.text || fallbackResponse.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
       } catch (fallbackError) {

@@ -1,5 +1,5 @@
 {
   "name": "Novik",
   "description": "",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["microphone"]
 }

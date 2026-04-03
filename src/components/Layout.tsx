@@ -23,7 +23,7 @@ export default function Layout() {
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans relative overflow-hidden">
+    <div className="flex h-screen print:h-auto print:min-h-0 bg-slate-50 text-slate-900 font-sans relative overflow-hidden print:overflow-visible">
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
         <div 
@@ -34,7 +34,7 @@ export default function Layout() {
 
       {/* Sidebar */}
       <aside className={clsx(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 lg:relative lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 lg:relative lg:translate-x-0 print:hidden",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
@@ -185,9 +185,9 @@ export default function Layout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main className="flex-1 overflow-hidden print:overflow-visible flex flex-col">
         {/* Mobile Header */}
-        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-30">
+        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-30 print:hidden">
           <div className="flex items-center gap-2">
             <img src="/logo.png?v=2" alt="Novik Logo" className="w-8 h-8 object-contain" />
             <span className="font-bold text-lg tracking-tight">Novik</span>
@@ -199,7 +199,7 @@ export default function Layout() {
             <Menu className="w-6 h-6" />
           </button>
         </header>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto print:overflow-visible">
           <Outlet />
         </div>
       </main>

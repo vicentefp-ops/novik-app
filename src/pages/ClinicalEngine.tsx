@@ -6,17 +6,43 @@ import { collection, getDocs, query, where, addDoc, serverTimestamp } from 'fire
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
-import { Stethoscope, Activity, AlertCircle, FileText, Pill, ChevronRight, Loader2, Paperclip, CheckCircle2, MessageSquare, Send, PlusCircle } from 'lucide-react';
+import { Stethoscope, Activity, AlertCircle, FileText, Pill, ChevronRight, Loader2, Paperclip, CheckCircle2, MessageSquare, Send, PlusCircle, Mic, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import clsx from 'clsx';
+import VoiceAssistant from '../components/VoiceAssistant';
+import html2pdf from 'html2pdf.js';
 
 export default function ClinicalEngine() {
   const { user } = useAuth();
   const { language, t } = useLanguage();
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<PatientData>();
+  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<PatientData>();
   const [loading, setLoading] = useState(false);
+
+  const handleVoiceFieldUpdate = (field: string, value: any) => {
+    console.log(`Voice update received: ${field} = ${value}`);
+    // Map field names if necessary
+    const fieldMap: Record<string, keyof PatientData> = {
+      'age': 'age',
+      'weight': 'weight',
+      'height': 'height',
+      'sex': 'sex',
+      'procedure': 'procedure',
+      'currentPathologies': 'currentPathologies',
+      'medication': 'medication',
+      'allergies': 'allergies'
+    };
+
+    const targetField = fieldMap[field];
+    if (targetField) {
+      if (targetField === 'age' || targetField === 'weight' || targetField === 'height') {
+        setValue(targetField, Number(value), { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+      } else {
+        setValue(targetField, value, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
+      }
+    }
+  };
   
   useEffect(() => {
     console.log('Loading state changed:', loading);
@@ -38,6 +64,61 @@ export default function ClinicalEngine() {
   const [progress, setProgress] = useState(10);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [isDictating, setIsDictating] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const toggleDictation = () => {
+    if (isDictating) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsDictating(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert(language === 'en' ? 'Speech recognition is not supported in this browser.' : 'El reconocimiento de voz no está soportado en este navegador.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = language === 'en' ? 'en-US' : 'es-ES';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    let finalTranscript = question; // Start with existing question
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let currentFinal = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          currentFinal += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      finalTranscript += currentFinal;
+      setQuestion(finalTranscript + interimTranscript);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error', event.error);
+      setIsDictating(false);
+    };
+
+    recognition.onend = () => {
+      setIsDictating(false);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsDictating(true);
+  };
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -118,17 +199,25 @@ export default function ClinicalEngine() {
     setIsAsking(true);
     setChatProgress(language === 'en' ? 'Thinking...' : 'Pensando...');
     
+    abortControllerRef.current = new AbortController();
+
     try {
       console.log('Calling askFollowUpQuestion...');
-      const answer = await askFollowUpQuestion(currentPatientData, result, newHistory, currentQuestion, language, setChatProgress);
+      const answer = await askFollowUpQuestion(currentPatientData, result, newHistory, currentQuestion, language, setChatProgress, abortControllerRef.current.signal);
       console.log('askFollowUpQuestion response received.');
       setChatHistory([...newHistory, { role: 'ai' as const, content: answer }]);
-    } catch (error) {
-      console.error('Error asking follow-up:', error);
-      alert('Error al procesar la pregunta.');
+    } catch (error: any) {
+      if (error.message === 'AbortError') {
+        console.log('Follow-up question aborted');
+        setChatHistory(newHistory); // Keep the user's question, but don't add AI response
+      } else {
+        console.error('Error asking follow-up:', error);
+        alert('Error al procesar la pregunta.');
+      }
     } finally {
       setIsAsking(false);
       setChatProgress('');
+      abortControllerRef.current = null;
     }
   };
 
@@ -155,11 +244,13 @@ export default function ClinicalEngine() {
     };
     setCurrentPatientData(fullData);
 
+    abortControllerRef.current = new AbortController();
+
     try {
       console.log('Starting evaluateClinicalCase...');
       setProgressStatus(language === 'en' ? 'Starting analysis...' : 'Iniciando análisis...');
       console.log('Calling evaluateClinicalCase with:', { fullData, activeProtocols, activeLeaflets, language });
-      const recommendation = await evaluateClinicalCase(fullData, activeProtocols, activeLeaflets, language, setProgressStatus);
+      const recommendation = await evaluateClinicalCase(fullData, activeProtocols, activeLeaflets, language, setProgressStatus, abortControllerRef.current.signal);
       console.log('evaluateClinicalCase completed successfully. Recommendation length:', recommendation.length);
       setResult(recommendation);
 
@@ -179,6 +270,10 @@ export default function ClinicalEngine() {
         }
       }
     } catch (error: any) {
+      if (error.message === 'AbortError') {
+        console.log('Analysis aborted by user');
+        return;
+      }
       console.error('Error evaluating case:', error);
       let errorMessage = language === 'en' ? 'Error evaluating clinical case. Please try again.' : 'Error al evaluar el caso clínico. Por favor, inténtalo de nuevo.';
       
@@ -202,6 +297,13 @@ export default function ClinicalEngine() {
       setAnalysisError(errorMessage);
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
+    }
+  };
+
+  const handleCancelAnalysis = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
   };
 
@@ -212,6 +314,10 @@ export default function ClinicalEngine() {
     setCurrentPatientData(null);
     setAnonymizedText('');
     setQuestion('');
+  };
+
+  const handleExportPDF = () => {
+    window.print();
   };
 
   const renderResultSections = () => {
@@ -296,13 +402,19 @@ export default function ClinicalEngine() {
     <div className="flex-1 h-full overflow-y-auto bg-slate-50 p-6 lg:p-8">
       <div className="max-w-4xl mx-auto space-y-8">
         {/* Form Section */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:p-8">
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-              <Stethoscope className="w-7 h-7 text-olive-600" />
-              {t('evaluationTitle')}
-            </h1>
-            <p className="text-slate-500 mt-1">{t('evaluationDesc')}</p>
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 lg:p-8 print:hidden">
+          <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+                <Stethoscope className="w-7 h-7 text-olive-600" />
+                {t('evaluationTitle')}
+              </h1>
+              <p className="text-slate-500 mt-1">{t('evaluationDesc')}</p>
+            </div>
+            <VoiceAssistant 
+              onFieldUpdate={handleVoiceFieldUpdate} 
+              onAnalyzeCase={handleSubmit(onSubmit)}
+            />
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -485,7 +597,13 @@ export default function ClinicalEngine() {
         {/* Results Section */}
         <div id="results-section" className="scroll-mt-8">
           {loading ? (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 flex flex-col items-center justify-center text-slate-500 space-y-4">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-12 flex flex-col items-center justify-center text-slate-500 space-y-4 relative">
+              <button 
+                onClick={handleCancelAnalysis}
+                className="absolute top-4 right-4 bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg border border-red-200 transition-colors text-sm font-semibold shadow-sm"
+              >
+                {language === 'en' ? 'Cancel Analysis' : 'Cancelar análisis'}
+              </button>
               <Loader2 className="w-12 h-12 animate-spin text-olive-600" />
               <p className="text-lg font-medium">{t('evaluating')}</p>
               <p className="text-sm text-center max-w-md">{progressStatus || t('evaluatingDesc')}</p>
@@ -497,12 +615,19 @@ export default function ClinicalEngine() {
             </div>
           ) : result ? (
             <div className="flex flex-col gap-4">
-              <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+              <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200 print:hidden">
                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                   <FileText className="w-5 h-5 text-olive-600" />
                   {t('clinicalReport')}
                 </h2>
                 <div className="flex gap-3">
+                  <button 
+                    onClick={handleExportPDF} 
+                    className="flex items-center gap-2 px-4 py-2 bg-white text-olive-700 border border-olive-200 rounded-lg hover:bg-olive-50 transition-colors text-sm font-medium shadow-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    {language === 'en' ? 'Export PDF' : 'Exportar PDF'}
+                  </button>
                   <button 
                     onClick={handleNewConsultation} 
                     className="flex items-center gap-2 px-4 py-2 bg-olive-50 text-olive-700 border border-olive-100 rounded-lg hover:bg-olive-100 transition-colors text-sm font-medium shadow-sm"
@@ -521,7 +646,7 @@ export default function ClinicalEngine() {
                 </div>
 
                 {/* Follow-up Chat */}
-                <div className="mt-12 border-t-2 border-olive-100 pt-8" data-html2canvas-ignore="true">
+                <div className="mt-12 border-t-2 border-olive-100 pt-8">
                   <div className="bg-olive-50/50 rounded-2xl p-6 border border-olive-100">
                     <h3 className="text-xl font-bold text-olive-900 mb-6 flex items-center gap-3">
                       <MessageSquare className="w-6 h-6 text-olive-600" />
@@ -597,17 +722,28 @@ export default function ClinicalEngine() {
                       </div>
                     )}
   
-                    <div className="flex gap-3 items-end">
-                      <div className="flex-1">
+                    <div id="chat-input-area" className="flex gap-3 items-end print:hidden" data-html2canvas-ignore="true">
+                      <div className="flex-1 relative">
                         <input 
                           type="text" 
                           value={question}
                           onChange={e => setQuestion(e.target.value)}
                           onKeyDown={e => e.key === 'Enter' && handleAskQuestion()}
                           placeholder={t('askPlaceholder')}
-                          className="w-full p-4 border border-olive-200 rounded-xl focus:ring-2 focus:ring-olive-500 focus:border-olive-500 bg-white shadow-inner"
+                          className="w-full p-4 pr-12 border border-olive-200 rounded-xl focus:ring-2 focus:ring-olive-500 focus:border-olive-500 bg-white shadow-inner"
                           disabled={isAsking}
                         />
+                        <button 
+                          onClick={toggleDictation}
+                          className={`absolute right-3 top-1/2 -translate-y-1/2 p-2 transition-colors ${
+                            isDictating 
+                              ? 'text-red-500 animate-pulse' 
+                              : 'text-slate-400 hover:text-olive-600'
+                          }`}
+                          title={language === 'en' ? 'Dictate question' : 'Dictar pregunta'}
+                        >
+                          <Mic className="w-5 h-5" />
+                        </button>
                       </div>
                       <button 
                         onClick={handleAskQuestion}
@@ -622,7 +758,14 @@ export default function ClinicalEngine() {
               </div>
 
               {/* Bottom Action Buttons */}
-              <div className="flex justify-end gap-3 mt-2">
+              <div className="flex justify-end gap-3 mt-2 print:hidden">
+                <button 
+                  onClick={handleExportPDF} 
+                  className="flex items-center gap-2 px-4 py-2 bg-white text-olive-700 border border-olive-200 rounded-lg hover:bg-olive-50 transition-colors text-sm font-medium shadow-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  {language === 'en' ? 'Export PDF' : 'Exportar PDF'}
+                </button>
                 <button 
                   onClick={handleNewConsultation} 
                   className="flex items-center gap-2 px-4 py-2 bg-olive-50 text-olive-700 border border-olive-100 rounded-lg hover:bg-olive-100 transition-colors text-sm font-medium shadow-sm"
